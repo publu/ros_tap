@@ -7,3 +7,5 @@ build/
 *.egg
 .DS_Store
 ros_tap_data/
+*.tar.gz
+*.whl

@@ -16,11 +16,7 @@ class DDSParticipant:
 
 
 def discover_ros2_nodes(domain_id: int = 0, timeout: float = 3.0) -> list[RobotNode]:
-    """Discover ROS 2 nodes on the DDS network.
-
-    Uses CycloneDDS to join the DDS domain and enumerate
-    discovered participants and their endpoints.
-    """
+    """Discover ROS 2 nodes on the DDS network."""
     try:
         from cyclonedds.core import WaitSet
         from cyclonedds.builtin import DcpsParticipant, DcpsEndpoint

@@ -1,6 +1,6 @@
 # ros_tap
 
-**Zero-config telemetry tap for any ROS robot on your network.**
+**Zero config telemetry tap for any ROS robot on your network.**
 
 ```
  ██████╗  ██████╗ ███████╗    ████████╗ █████╗ ██████╗
@@ -11,7 +11,7 @@
  ╚═╝  ╚═╝ ╚═════╝ ╚══════╝       ╚═╝   ╚═╝  ╚═╝╚═╝
 ```
 
-ros_tap discovers ROS 1 and ROS 2 robots on your network, subscribes to their topics, and streams telemetry wherever you want. No ROS install required. It's just a tap — you decide where the data goes.
+ros_tap discovers ROS 1 and ROS 2 robots on your network, subscribes to their topics, and streams telemetry wherever you want. No ROS install required. It's just a tap. You decide where the data goes.
 
 ## Install
 
@@ -23,16 +23,16 @@ pip install 'ros_tap[all]'   # everything
 
 ## Usage
 
-### Scan — see what's on the network
+### Scan: see what's on the network
 
 ```bash
 ros_tap scan                         # rich terminal dashboard
-ros_tap scan --json                  # machine-readable output
+ros_tap scan --json                  # machine readable output
 ros_tap scan --domain 42             # specific ROS 2 domain
 ros_tap scan --ros1-uri http://robot:11311  # specific ROS 1 master
 ```
 
-### Record — stream telemetry
+### Record: stream telemetry
 
 ```bash
 ros_tap record                                # stream to stdout as JSONL
@@ -44,7 +44,7 @@ ros_tap record | jq '.data'                   # pipe to anything
 ros_tap record -o ./data -c power,imu,lidar   # local, filtered
 ```
 
-### Info — check your setup
+### Info: check your setup
 
 ```bash
 ros_tap info    # shows installed backends, env vars, version
@@ -52,11 +52,13 @@ ros_tap info    # shows installed backends, env vars, version
 
 ## How it works
 
-- **ROS 2**: Joins the DDS network as a passive participant using CycloneDDS. Discovers all nodes, topics, and types via DDS multicast. No ROS 2 install needed.
-- **ROS 1**: Queries the ROS Master's XML-RPC API at `ROS_MASTER_URI`. Gets the full node/topic graph in one call.
-- **Auto-detect**: `ros_tap` tries both and merges results. Works in mixed ROS 1 + ROS 2 environments (ros1_bridge).
+**ROS 2:** Joins the DDS network as a passive participant using CycloneDDS. Discovers all nodes, topics, and types via DDS multicast. No ROS 2 install needed.
 
-Adding a subscriber does not interfere with any existing software on the robot. DDS pub/sub is like tuning into a radio station — other listeners and the broadcaster are unaffected.
+**ROS 1:** Queries the ROS Master's XML RPC API at `ROS_MASTER_URI`. Gets the full node/topic graph in one call.
+
+**Auto detect:** ros_tap tries both and merges results. Works in mixed ROS 1 + ROS 2 environments with ros1_bridge.
+
+Adding a subscriber does not interfere with any existing software on the robot. DDS pub/sub is like tuning into a radio station. Other listeners and the broadcaster are unaffected.
 
 ## Output formats
 
@@ -69,10 +71,10 @@ All sinks write JSONL (one JSON object per line):
 | Sink | Flag | Notes |
 |------|------|-------|
 | stdout | `-o -` (default) | Pipe to `jq`, `grep`, `curl`, whatever |
-| Local | `-o ./path` | Auto-rotating JSONL files (50 MB default) |
+| Local | `-o ./path` | Auto rotating JSONL files (50 MB default) |
 | S3 | `-o s3://bucket/prefix` | Buffered uploads, NDJSON content type |
 
-## Auto-detected categories
+## Auto detected categories
 
 ros_tap classifies topics into categories for filtering:
 

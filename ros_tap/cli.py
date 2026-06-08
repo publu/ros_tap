@@ -1,4 +1,4 @@
-"""ros_tap CLI — zero-config telemetry tap for any ROS robot."""
+"""ros_tap CLI: zero config telemetry tap for any ROS robot."""
 
 from __future__ import annotations
 
@@ -18,12 +18,12 @@ console = Console()
 @click.group()
 @click.version_option(__version__, prog_name="ros_tap")
 def main():
-    """Zero-config telemetry tap for any ROS robot on your network.
+    """Zero config telemetry tap for any ROS robot on your network.
 
     \b
     ros_tap discovers ROS 1 and ROS 2 robots automatically,
     subscribes to their topics, and streams telemetry wherever
-    you want — terminal, local files, or S3.
+    you want: terminal, local files, or S3.
 
     \b
     No ROS install required. Just a passive listener.
@@ -69,8 +69,8 @@ def scan(ros1_uri, domain, timeout, as_json):
 @click.option("--output", "-o", default="-", help="Output: '-' for stdout, path for local dir, 's3://bucket/prefix' for S3")
 @click.option("--s3-region", default=None, help="AWS region for S3 sink")
 @click.option("--buffer-size", default=1000, type=int, help="S3 buffer size before flush")
-@click.option("--topics", "-t", default=None, help="Comma-separated topic name filters (substring match)")
-@click.option("--categories", "-c", default=None, help="Comma-separated category filters (e.g. power,actuators,imu)")
+@click.option("--topics", "-t", default=None, help="Comma separated topic name filters (substring match)")
+@click.option("--categories", "-c", default=None, help="Comma separated category filters (e.g. power,actuators,imu)")
 def record(ros1_uri, domain, timeout, output, s3_region, buffer_size, topics, categories):
     """Record telemetry to stdout, local files, or S3.
 

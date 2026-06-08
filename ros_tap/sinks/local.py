@@ -1,4 +1,4 @@
-"""Local file sink — writes JSONL telemetry to disk."""
+"""Local file sink: writes JSONL telemetry to disk."""
 
 from __future__ import annotations
 

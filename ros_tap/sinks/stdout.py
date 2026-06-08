@@ -1,4 +1,4 @@
-"""Stdout sink — prints telemetry as JSONL to stdout for piping."""
+"""Stdout sink: prints telemetry as JSONL to stdout for piping."""
 
 from __future__ import annotations
 

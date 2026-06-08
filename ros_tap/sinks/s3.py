@@ -1,4 +1,4 @@
-"""S3 sink — buffers telemetry and uploads to S3 as JSONL objects."""
+"""S3 sink: buffers telemetry and uploads to S3 as JSONL objects."""
 
 from __future__ import annotations
 

@@ -1,5 +1,3 @@
-"""Base sink interface."""
-
 from __future__ import annotations
 
 import json
@@ -19,14 +17,11 @@ class Sink(ABC):
     def close(self) -> None: ...
 
     def serialize(self, frame: TelemetryFrame) -> str:
-        return json.dumps(
-            {
-                "ts": frame.timestamp,
-                "node": frame.source_node,
-                "topic": frame.topic,
-                "type": frame.msg_type,
-                "ros": frame.ros_version,
-                "data": frame.data,
-            },
-            default=str,
-        )
+        return json.dumps({
+            "ts": frame.timestamp,
+            "node": frame.source_node,
+            "topic": frame.topic,
+            "type": frame.msg_type,
+            "ros": frame.ros_version,
+            "data": frame.data,
+        }, default=str)

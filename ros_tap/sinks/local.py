@@ -1,8 +1,7 @@
-"""Local file sink: writes JSONL telemetry to disk."""
+"""JSONL file sink: writes telemetry as newline delimited JSON."""
 
 from __future__ import annotations
 
-import os
 import time
 from pathlib import Path
 
@@ -17,14 +16,13 @@ class LocalSink(Sink):
         self.rotate_bytes = rotate_mb * 1024 * 1024
         self._file = None
         self._bytes_written = 0
-        self._open_new_file()
+        self._rotate()
 
-    def _open_new_file(self):
+    def _rotate(self):
         if self._file:
             self._file.close()
         ts = time.strftime("%Y%m%d_%H%M%S")
-        path = self.output_dir / f"tap_{ts}.jsonl"
-        self._file = open(path, "a")
+        self._file = open(self.output_dir / f"tap_{ts}.jsonl", "a")
         self._bytes_written = 0
 
     def write(self, frame: TelemetryFrame) -> None:
@@ -32,7 +30,7 @@ class LocalSink(Sink):
         self._file.write(line)
         self._bytes_written += len(line.encode())
         if self._bytes_written >= self.rotate_bytes:
-            self._open_new_file()
+            self._rotate()
 
     def flush(self) -> None:
         if self._file:

@@ -1,4 +1,4 @@
-"""Auto-detect which ROS versions are available on the network."""
+"""Auto detect available ROS versions on the network."""
 
 from __future__ import annotations
 
@@ -10,24 +10,19 @@ def auto_discover(
     ros2_domain: int = 0,
     timeout: float = 3.0,
 ) -> list[RobotNode]:
-    """Try both ROS 1 and ROS 2 discovery, return whatever is found."""
     nodes: list[RobotNode] = []
     errors: list[str] = []
 
     try:
         from ros_tap.discovery.ros1_master import discover_ros1_nodes, is_master_reachable
-
         if is_master_reachable(ros1_uri):
-            ros1_nodes = discover_ros1_nodes(ros1_uri)
-            nodes.extend(ros1_nodes)
+            nodes.extend(discover_ros1_nodes(ros1_uri))
     except Exception as e:
         errors.append(f"ROS 1: {e}")
 
     try:
         from ros_tap.discovery.ros2_dds import discover_ros2_nodes
-
-        ros2_nodes = discover_ros2_nodes(ros2_domain, timeout)
-        nodes.extend(ros2_nodes)
+        nodes.extend(discover_ros2_nodes(ros2_domain, timeout))
     except Exception as e:
         errors.append(f"ROS 2: {e}")
 

@@ -13,6 +13,7 @@ from ros_tap import __version__
 from ros_tap.banner import print_banner
 
 console = Console()
+err = Console(stderr=True)
 
 
 @click.group()
@@ -23,26 +24,24 @@ def main():
     \b
     ros_tap discovers ROS 1 and ROS 2 robots automatically,
     subscribes to their topics, and streams telemetry wherever
-    you want: terminal, local files, or S3.
+    you want: terminal, local NPZ files, or S3/R2.
 
     \b
     No ROS install required. Just a passive listener.
     """
-    pass
 
 
 @main.command()
 @click.option("--ros1-uri", default=None, help="ROS Master URI (default: $ROS_MASTER_URI or localhost:11311)")
-@click.option("--domain", default=0, type=int, help="ROS 2 DDS domain ID (default: 0)")
+@click.option("--domain", default=0, type=int, help="ROS 2 DDS domain ID")
 @click.option("--timeout", default=3.0, type=float, help="Discovery timeout in seconds")
-@click.option("--json", "as_json", is_flag=True, help="Output as JSON instead of dashboard")
+@click.option("--json", "as_json", is_flag=True, help="Output JSON instead of dashboard")
 def scan(ros1_uri, domain, timeout, as_json):
-    """Scan the network and show all discovered robots and topics."""
+    """Scan the network for robots and topics."""
     print_banner(console)
     console.print("[dim]Scanning network...[/dim]\n")
 
     from ros_tap.discovery.auto import auto_discover
-
     nodes = auto_discover(ros1_uri=ros1_uri, ros2_domain=domain, timeout=timeout)
 
     if as_json:
@@ -66,91 +65,148 @@ def scan(ros1_uri, domain, timeout, as_json):
 @click.option("--ros1-uri", default=None, help="ROS Master URI")
 @click.option("--domain", default=0, type=int, help="ROS 2 DDS domain ID")
 @click.option("--timeout", default=3.0, type=float, help="Discovery timeout in seconds")
-@click.option("--output", "-o", default="-", help="Output: '-' for stdout, path for local dir, 's3://bucket/prefix' for S3")
-@click.option("--format", "-f", "fmt", default="npz", type=click.Choice(["npz", "jsonl"]), help="Local storage format (default: npz)")
-@click.option("--s3-region", default=None, help="AWS region for S3 sink")
+@click.option("--output", "-o", default="-", help="'-' for stdout, path for local dir, 's3://bucket/prefix' for S3")
+@click.option("--format", "-f", "fmt", default="npz", type=click.Choice(["npz", "jsonl"]), help="Local format (default: npz)")
+@click.option("--s3-region", default=None, help="AWS region for S3")
+@click.option("--s3-endpoint", default=None, help="Custom S3 endpoint (for R2, MinIO, etc)")
 @click.option("--buffer-size", default=1000, type=int, help="S3 buffer size before flush")
 @click.option("--flush-interval", default=30.0, type=float, help="NPZ flush interval in seconds")
-@click.option("--topics", "-t", default=None, help="Comma separated topic name filters (substring match)")
-@click.option("--categories", "-c", default=None, help="Comma separated category filters (e.g. power,actuators,imu)")
-def record(ros1_uri, domain, timeout, output, fmt, s3_region, buffer_size, flush_interval, topics, categories):
-    """Record telemetry to stdout, local files, or S3.
+@click.option("--topics", "-t", default=None, help="Topic name filters, comma separated")
+@click.option("--categories", "-c", default=None, help="Category filters, comma separated")
+def record(ros1_uri, domain, timeout, output, fmt, s3_region, s3_endpoint, buffer_size, flush_interval, topics, categories):
+    """Record telemetry to stdout, local NPZ/JSONL, or S3.
 
     \b
     Examples:
-      ros_tap record                          # stream to stdout
-      ros_tap record -o ./data                # write NPZ to local dir (default)
-      ros_tap record -o ./data -f jsonl       # write JSONL instead
-      ros_tap record -o s3://my-bucket/robots # upload to S3
-      ros_tap record -c power,actuators       # only power & actuator topics
+      ros_tap record                          # stdout as JSONL
+      ros_tap record -o ./data                # NPZ to local dir
+      ros_tap record -o ./data -f jsonl       # JSONL to local dir
+      ros_tap record -o s3://bucket/prefix    # stream to S3
+      ros_tap record -c power,actuators       # filter by category
       ros_tap record | jq '.data'             # pipe to jq
     """
-    print_banner(console)
+    print_banner(err)
 
     from ros_tap.discovery.auto import auto_discover
-    from ros_tap.models import TelemetryFrame, classify_topic
+    from ros_tap.models import TelemetryFrame
 
     topic_filters = [t.strip() for t in topics.split(",")] if topics else None
     cat_filters = [c.strip() for c in categories.split(",")] if categories else None
 
-    sink = _make_sink(output, fmt, s3_region, buffer_size, flush_interval)
+    sink = _make_sink(output, fmt, s3_region, s3_endpoint, buffer_size, flush_interval)
 
-    console.print(f"[dim]Discovering robots (timeout={timeout}s)...[/dim]", err=True)
+    err.print(f"[dim]Discovering robots (timeout={timeout}s)...[/dim]")
     nodes = auto_discover(ros1_uri=ros1_uri, ros2_domain=domain, timeout=timeout)
 
     if not nodes:
-        console.print("[yellow]No robots found. Exiting.[/yellow]", err=True)
+        err.print("[yellow]No robots found.[/yellow]")
         sys.exit(1)
 
-    all_topics = []
+    matched = []
     for node in nodes:
         for topic in node.topics:
             if topic_filters and not any(f in topic.name for f in topic_filters):
                 continue
             if cat_filters and topic.category not in cat_filters:
                 continue
-            all_topics.append((node, topic))
+            matched.append((node, topic))
 
-    console.print(
-        f"[green]Found {len(nodes)} node(s), recording {len(all_topics)} topic(s)[/green]",
-        err=True,
-    )
-    console.print(f"[dim]Output: {output} (format: {fmt})[/dim]", err=True)
-    console.print("[dim]Press Ctrl+C to stop[/dim]\n", err=True)
+    err.print(f"[green]Found {len(nodes)} node(s), recording {len(matched)} topic(s)[/green]")
+    err.print(f"[dim]Output: {output} (format: {fmt})[/dim]")
+    err.print("[dim]Ctrl+C to stop[/dim]\n")
 
     running = True
 
-    def handle_sigint(sig, frame):
+    def on_sigint(sig, frame):
         nonlocal running
         running = False
 
-    signal.signal(signal.SIGINT, handle_sigint)
+    signal.signal(signal.SIGINT, on_sigint)
 
     while running:
-        for node, topic in all_topics:
-            frame = TelemetryFrame(
+        for node, topic in matched:
+            sink.write(TelemetryFrame(
                 timestamp=time.time(),
                 source_node=node.name,
                 topic=topic.name,
                 msg_type=topic.msg_type,
                 data={"status": "discovered", "category": topic.category},
                 ros_version=node.ros_version,
-            )
-            sink.write(frame)
+            ))
         sink.flush()
         time.sleep(1.0)
 
-    console.print("\n[yellow]Stopping...[/yellow]", err=True)
+    err.print("\n[yellow]Stopping...[/yellow]")
     sink.close()
-    console.print("[green]Done.[/green]", err=True)
+    err.print("[green]Done.[/green]")
+
+
+@main.command()
+@click.option("--data-dir", "-d", default="./ros_tap_data", help="Local data directory")
+def runs(data_dir):
+    """List recorded runs."""
+    from ros_tap.loader import list_runs
+    from rich.table import Table
+    import datetime
+
+    print_banner(console)
+
+    all_runs = list_runs(data_dir)
+    if not all_runs:
+        console.print(f"[yellow]No runs found in {data_dir}[/yellow]")
+        return
+
+    table = Table(title=f"Recorded Runs ({data_dir})", border_style="dim")
+    table.add_column("#", style="dim", width=4)
+    table.add_column("Run ID", style="cyan")
+    table.add_column("Started", style="green")
+    table.add_column("Duration")
+    table.add_column("Topics", justify="right")
+    table.add_column("Directory", style="dim")
+
+    for i, run in enumerate(all_runs):
+        started = datetime.datetime.fromtimestamp(run.start).strftime("%Y-%m-%d %H:%M:%S")
+        duration = f"{run.duration:.1f}s"
+        table.add_row(str(i), run.run_id, started, duration, str(len(run.topics)), run.path.name)
+
+    console.print(table)
+
+
+@main.command()
+@click.argument("run_dir", type=click.Path(exists=True))
+@click.option("--bucket", "-b", required=True, help="S3/R2 bucket name")
+@click.option("--prefix", "-p", default="ros_tap/", help="Key prefix in bucket")
+@click.option("--region", default=None, help="AWS region")
+@click.option("--endpoint", default=None, help="Custom S3 endpoint (for R2, MinIO, etc)")
+def push(run_dir, bucket, prefix, region, endpoint):
+    """Push a local run to S3/R2.
+
+    \b
+    Examples:
+      ros_tap push ./ros_tap_data/run_20260608_193000_abc -b my-bucket
+      ros_tap push ./ros_tap_data/run_20260608_193000_abc -b my-r2-bucket --endpoint https://acct.r2.cloudflarestorage.com
+    """
+    print_banner(console)
+
+    from ros_tap.loader import Run
+    from ros_tap.push import push_run
+
+    run = Run(run_dir)
+    console.print(f"[dim]Pushing run {run.run_id} ({len(run.topics)} topics, {run.duration}s)...[/dim]")
+
+    dest = push_run(run, bucket=bucket, prefix=prefix, region=region, endpoint_url=endpoint)
+
+    console.print(f"[green]Pushed to {dest}[/green]")
+    console.print(f"[dim]Index updated at s3://{bucket}/{prefix.rstrip('/')}/index.json[/dim]")
 
 
 @main.command()
 def info():
-    """Show ros_tap version and environment info."""
+    """Show version and environment."""
     print_banner(console)
 
     from rich.table import Table
+    import os
 
     table = Table(show_header=False, border_style="dim")
     table.add_column("Key", style="bold")
@@ -176,32 +232,32 @@ def info():
     except ImportError:
         table.add_row("boto3", "[dim]not installed (optional)[/dim]")
 
-    import os
-    ros_master = os.environ.get("ROS_MASTER_URI", "[dim]not set[/dim]")
-    ros_domain = os.environ.get("ROS_DOMAIN_ID", "0")
-    table.add_row("ROS_MASTER_URI", ros_master)
-    table.add_row("ROS_DOMAIN_ID", ros_domain)
+    table.add_row("ROS_MASTER_URI", os.environ.get("ROS_MASTER_URI", "[dim]not set[/dim]"))
+    table.add_row("ROS_DOMAIN_ID", os.environ.get("ROS_DOMAIN_ID", "0"))
 
     console.print(table)
 
 
-def _make_sink(output: str, fmt: str, s3_region: str | None, buffer_size: int, flush_interval: float):
+def _make_sink(output, fmt, s3_region, s3_endpoint, buffer_size, flush_interval):
     if output.startswith("s3://"):
         from ros_tap.sinks.s3 import S3Sink
         parts = output[5:].split("/", 1)
         bucket = parts[0]
         prefix = parts[1] if len(parts) > 1 else "ros_tap/"
-        return S3Sink(bucket=bucket, prefix=prefix, region=s3_region, buffer_size=buffer_size)
+        return S3Sink(
+            bucket=bucket, prefix=prefix,
+            region=s3_region, endpoint_url=s3_endpoint,
+            buffer_size=buffer_size,
+        )
     elif output == "-":
         from ros_tap.sinks.stdout import StdoutSink
         return StdoutSink()
+    elif fmt == "npz":
+        from ros_tap.sinks.npz import NpzSink
+        return NpzSink(output_dir=output, flush_interval=flush_interval)
     else:
-        if fmt == "npz":
-            from ros_tap.sinks.npz import NpzSink
-            return NpzSink(output_dir=output, flush_interval=flush_interval)
-        else:
-            from ros_tap.sinks.local import LocalSink
-            return LocalSink(output_dir=output)
+        from ros_tap.sinks.local import LocalSink
+        return LocalSink(output_dir=output)
 
 
 if __name__ == "__main__":

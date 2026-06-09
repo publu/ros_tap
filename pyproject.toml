@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ros_tap"
-version = "0.2.0"
+version = "0.3.0"
 description = "Zero config telemetry tap for any ROS 1 or ROS 2 robot on your network. Discover, subscribe, stream. No ROS install required."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.9"
 authors = [{ name = "Pablo", email = "pablo@hashingsystems.com" }]
-keywords = ["ros", "ros2", "robotics", "telemetry", "monitoring", "diagnostics", "dds"]
+keywords = ["ros", "ros2", "robotics", "telemetry", "monitoring", "diagnostics", "dds", "npz"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -31,9 +31,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-ros1 = ["defusedxml>=0.7.0"]
 s3 = ["boto3>=1.28"]
-all = ["ros_tap[ros1,s3]"]
+all = ["ros_tap[s3]"]
 
 [project.urls]
 Homepage = "https://github.com/publu/ros_tap"

@@ -1,4 +1,4 @@
-"""NPZ sink: buffers numeric telemetry per topic and flushes as compressed .npz files."""
+"""NPZ sink: buffers telemetry per topic and flushes as compressed numpy archives."""
 
 from __future__ import annotations
 
@@ -34,9 +34,13 @@ class NpzSink(Sink):
         self._buffers: dict[str, list[dict]] = {}
         self._timestamps: dict[str, list[float]] = {}
         self._meta: dict[str, dict] = {}
-        self._total_samples: dict[str, int] = {}
-        self._chunk_index: dict[str, int] = {}
+        self._sample_counts: dict[str, int] = {}
+        self._chunk_counts: dict[str, int] = {}
         self._last_flush = time.time()
+
+    @property
+    def run_dir(self) -> Path:
+        return self._run_dir
 
     def write(self, frame: TelemetryFrame) -> None:
         topic = frame.topic
@@ -44,8 +48,8 @@ class NpzSink(Sink):
         if topic not in self._buffers:
             self._buffers[topic] = []
             self._timestamps[topic] = []
-            self._total_samples[topic] = 0
-            self._chunk_index[topic] = 0
+            self._sample_counts[topic] = 0
+            self._chunk_counts[topic] = 0
             self._meta[topic] = {
                 "msg_type": frame.msg_type,
                 "source_node": frame.source_node,
@@ -55,7 +59,7 @@ class NpzSink(Sink):
 
         self._buffers[topic].append(frame.data)
         self._timestamps[topic].append(frame.timestamp)
-        self._total_samples[topic] += 1
+        self._sample_counts[topic] += 1
 
         total_buffered = sum(len(v) for v in self._buffers.values())
         if total_buffered >= self.flush_samples:
@@ -74,15 +78,15 @@ class NpzSink(Sink):
         self._last_flush = time.time()
 
     def _flush_topic(self, topic: str, samples: list[dict], timestamps: list[float]):
-        safe_name = topic.strip("/").replace("/", "_")
-        chunk_idx = self._chunk_index.get(topic, 0)
-        self._chunk_index[topic] = chunk_idx + 1
+        safe_name = _topic_to_filename(topic)
+        chunk = self._chunk_counts.get(topic, 0)
+        self._chunk_counts[topic] = chunk + 1
 
-        arrays = {}
-        arrays["timestamps"] = np.array(timestamps, dtype=np.float64)
+        arrays: dict[str, np.ndarray] = {
+            "timestamps": np.array(timestamps, dtype=np.float64),
+        }
 
-        flat = _flatten_samples(samples)
-        for key, values in flat.items():
+        for key, values in _to_columns(samples).items():
             try:
                 arr = np.array(values)
                 if arr.dtype.kind in ("f", "i", "u", "b"):
@@ -92,8 +96,7 @@ class NpzSink(Sink):
             except (ValueError, TypeError):
                 arrays[key] = np.array(values, dtype=object)
 
-        filename = f"{safe_name}_{chunk_idx:04d}.npz"
-        np.savez_compressed(self._run_dir / filename, **arrays)
+        np.savez_compressed(self._run_dir / f"{safe_name}_{chunk:04d}.npz", **arrays)
 
     def close(self) -> None:
         self.flush()
@@ -109,56 +112,48 @@ class NpzSink(Sink):
         }
 
         for topic, meta in self._meta.items():
-            safe_name = topic.strip("/").replace("/", "_")
-            chunks = self._chunk_index.get(topic, 0)
+            safe_name = _topic_to_filename(topic)
+            chunks = self._chunk_counts.get(topic, 0)
             manifest["topics"][topic] = {
                 **meta,
-                "total_samples": self._total_samples.get(topic, 0),
+                "total_samples": self._sample_counts.get(topic, 0),
                 "chunks": chunks,
                 "files": [f"{safe_name}_{i:04d}.npz" for i in range(chunks)],
             }
 
-        manifest_path = self._run_dir / "manifest.json"
-        with open(manifest_path, "w") as f:
+        with open(self._run_dir / "manifest.json", "w") as f:
             json.dump(manifest, f, indent=2, default=str)
 
 
-def _flatten_samples(samples: list[dict]) -> dict[str, list]:
-    """Flatten a list of dicts into columnar format."""
+def _topic_to_filename(topic: str) -> str:
+    return topic.strip("/").replace("/", "_")
+
+
+def _flatten(d: dict, prefix: str = "") -> dict:
+    out = {}
+    for k, v in d.items():
+        key = f"{prefix}.{k}" if prefix else k
+        if isinstance(v, dict):
+            out.update(_flatten(v, key))
+        else:
+            out[key] = v
+    return out
+
+
+def _to_columns(samples: list[dict]) -> dict[str, list]:
     if not samples:
         return {}
 
-    keys: set[str] = set()
+    all_keys: set[str] = set()
+    flat_rows = []
     for s in samples:
-        keys.update(_flatten_keys(s))
+        flat = _flatten(s)
+        flat_rows.append(flat)
+        all_keys.update(flat.keys())
 
-    columns: dict[str, list] = {k: [] for k in sorted(keys)}
-
-    for s in samples:
-        flat = _flatten_dict(s)
+    columns: dict[str, list] = {k: [] for k in sorted(all_keys)}
+    for row in flat_rows:
         for k in columns:
-            columns[k].append(flat.get(k))
+            columns[k].append(row.get(k))
 
     return columns
-
-
-def _flatten_keys(d: dict, prefix: str = "") -> list[str]:
-    keys = []
-    for k, v in d.items():
-        full = f"{prefix}{k}" if not prefix else f"{prefix}.{k}"
-        if isinstance(v, dict):
-            keys.extend(_flatten_keys(v, full))
-        else:
-            keys.append(full)
-    return keys
-
-
-def _flatten_dict(d: dict, prefix: str = "") -> dict:
-    out = {}
-    for k, v in d.items():
-        full = f"{prefix}{k}" if not prefix else f"{prefix}.{k}"
-        if isinstance(v, dict):
-            out.update(_flatten_dict(v, full))
-        else:
-            out[full] = v
-    return out

@@ -1,8 +1,7 @@
-"""S3 sink: buffers telemetry and uploads to S3 as JSONL objects."""
+"""S3/R2 sink: buffers telemetry and uploads as JSONL."""
 
 from __future__ import annotations
 
-import io
 import time
 
 from ros_tap.models import TelemetryFrame
@@ -15,6 +14,7 @@ class S3Sink(Sink):
         bucket: str,
         prefix: str = "ros_tap/",
         region: str | None = None,
+        endpoint_url: str | None = None,
         buffer_size: int = 1000,
         flush_interval: float = 60.0,
     ):
@@ -33,6 +33,8 @@ class S3Sink(Sink):
         kwargs = {}
         if region:
             kwargs["region_name"] = region
+        if endpoint_url:
+            kwargs["endpoint_url"] = endpoint_url
         self._s3 = boto3.client("s3", **kwargs)
         self._buffer: list[str] = []
         self._last_flush = time.time()

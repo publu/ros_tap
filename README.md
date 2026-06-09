@@ -36,7 +36,8 @@ ros_tap scan --ros1-uri http://robot:11311  # specific ROS 1 master
 
 ```bash
 ros_tap record                                # stream to stdout as JSONL
-ros_tap record -o ./data                      # write to local directory
+ros_tap record -o ./data                      # write NPZ to local dir (default)
+ros_tap record -o ./data -f jsonl             # write JSONL instead
 ros_tap record -o s3://my-bucket/robots       # upload to S3
 ros_tap record -c power,actuators             # filter by category
 ros_tap record -t /battery,/joint_states      # filter by topic name
@@ -50,6 +51,54 @@ ros_tap record -o ./data -c power,imu,lidar   # local, filtered
 ros_tap info    # shows installed backends, env vars, version
 ```
 
+## Storage formats
+
+### NPZ (default for local recording)
+
+When recording to a local directory, ros_tap defaults to compressed NumPy archives. Each recording session creates a run directory with per topic `.npz` files and a `manifest.json`:
+
+```
+ros_tap_data/
+  run_20260608_193000_a1b2c3d4e5f6/
+    manifest.json
+    battery_state_0000.npz
+    joint_states_0000.npz
+    imu_data_0000.npz
+```
+
+The manifest tracks every topic in the run with its type, sample count, and file list. NPZ files store numeric data as compressed arrays, which is dramatically smaller than JSONL for high frequency sensors.
+
+Load a run in Python:
+
+```python
+from ros_tap.loader import Run, list_runs
+
+runs = list_runs("./ros_tap_data")
+run = runs[-1]  # latest run
+
+print(run.topics)
+imu = run.load("/imu")
+print(imu["timestamps"].shape)
+print(imu["linear_acceleration.x"])
+```
+
+### JSONL
+
+Use `--format jsonl` or pipe to stdout for human readable output:
+
+```json
+{"ts": 1718000000.0, "node": "/turtlebot", "topic": "/battery_state", "type": "sensor_msgs/BatteryState", "ros": 2, "data": {...}}
+```
+
+### Output sinks
+
+| Sink | Flag | Format | Notes |
+|------|------|--------|-------|
+| stdout | `-o -` (default) | JSONL | Pipe to `jq`, `grep`, `curl`, whatever |
+| Local | `-o ./path` | NPZ | Compressed arrays + manifest per run |
+| Local | `-o ./path -f jsonl` | JSONL | Auto rotating files (50 MB default) |
+| S3 | `-o s3://bucket/prefix` | JSONL | Buffered uploads, NDJSON content type |
+
 ## How it works
 
 **ROS 2:** Joins the DDS network as a passive participant using CycloneDDS. Discovers all nodes, topics, and types via DDS multicast. No ROS 2 install needed.
@@ -59,20 +108,6 @@ ros_tap info    # shows installed backends, env vars, version
 **Auto detect:** ros_tap tries both and merges results. Works in mixed ROS 1 + ROS 2 environments with ros1_bridge.
 
 Adding a subscriber does not interfere with any existing software on the robot. DDS pub/sub is like tuning into a radio station. Other listeners and the broadcaster are unaffected.
-
-## Output formats
-
-All sinks write JSONL (one JSON object per line):
-
-```json
-{"ts": 1718000000.0, "node": "/turtlebot", "topic": "/battery_state", "type": "sensor_msgs/BatteryState", "ros": 2, "data": {...}}
-```
-
-| Sink | Flag | Notes |
-|------|------|-------|
-| stdout | `-o -` (default) | Pipe to `jq`, `grep`, `curl`, whatever |
-| Local | `-o ./path` | Auto rotating JSONL files (50 MB default) |
-| S3 | `-o s3://bucket/prefix` | Buffered uploads, NDJSON content type |
 
 ## Auto detected categories
 
@@ -100,7 +135,7 @@ ros_tap classifies topics into categories for filtering:
 | Checks | ROS 2 install, DDS config, QoS | Live robot telemetry |
 | Requires ROS 2 | Yes | No |
 | ROS 1 support | No | Yes |
-| Output | Text report | JSONL stream |
+| Output | Text report | NPZ / JSONL stream |
 | Use case | "Is my dev env broken?" | "Is my robot alive?" |
 
 ## License

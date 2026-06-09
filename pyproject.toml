@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ros_tap"
-version = "0.1.0"
+version = "0.2.0"
 description = "Zero config telemetry tap for any ROS 1 or ROS 2 robot on your network. Discover, subscribe, stream. No ROS install required."
 readme = "README.md"
 license = "Apache-2.0"
@@ -26,6 +26,7 @@ classifiers = [
 dependencies = [
     "rich>=13.0",
     "click>=8.0",
+    "numpy>=1.24",
     "cyclonedds>=0.10.0",
 ]
 

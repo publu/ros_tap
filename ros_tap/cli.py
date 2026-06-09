@@ -67,17 +67,20 @@ def scan(ros1_uri, domain, timeout, as_json):
 @click.option("--domain", default=0, type=int, help="ROS 2 DDS domain ID")
 @click.option("--timeout", default=3.0, type=float, help="Discovery timeout in seconds")
 @click.option("--output", "-o", default="-", help="Output: '-' for stdout, path for local dir, 's3://bucket/prefix' for S3")
+@click.option("--format", "-f", "fmt", default="npz", type=click.Choice(["npz", "jsonl"]), help="Local storage format (default: npz)")
 @click.option("--s3-region", default=None, help="AWS region for S3 sink")
 @click.option("--buffer-size", default=1000, type=int, help="S3 buffer size before flush")
+@click.option("--flush-interval", default=30.0, type=float, help="NPZ flush interval in seconds")
 @click.option("--topics", "-t", default=None, help="Comma separated topic name filters (substring match)")
 @click.option("--categories", "-c", default=None, help="Comma separated category filters (e.g. power,actuators,imu)")
-def record(ros1_uri, domain, timeout, output, s3_region, buffer_size, topics, categories):
+def record(ros1_uri, domain, timeout, output, fmt, s3_region, buffer_size, flush_interval, topics, categories):
     """Record telemetry to stdout, local files, or S3.
 
     \b
     Examples:
       ros_tap record                          # stream to stdout
-      ros_tap record -o ./data                # write JSONL to local dir
+      ros_tap record -o ./data                # write NPZ to local dir (default)
+      ros_tap record -o ./data -f jsonl       # write JSONL instead
       ros_tap record -o s3://my-bucket/robots # upload to S3
       ros_tap record -c power,actuators       # only power & actuator topics
       ros_tap record | jq '.data'             # pipe to jq
@@ -90,7 +93,7 @@ def record(ros1_uri, domain, timeout, output, s3_region, buffer_size, topics, ca
     topic_filters = [t.strip() for t in topics.split(",")] if topics else None
     cat_filters = [c.strip() for c in categories.split(",")] if categories else None
 
-    sink = _make_sink(output, s3_region, buffer_size)
+    sink = _make_sink(output, fmt, s3_region, buffer_size, flush_interval)
 
     console.print(f"[dim]Discovering robots (timeout={timeout}s)...[/dim]", err=True)
     nodes = auto_discover(ros1_uri=ros1_uri, ros2_domain=domain, timeout=timeout)
@@ -112,7 +115,7 @@ def record(ros1_uri, domain, timeout, output, s3_region, buffer_size, topics, ca
         f"[green]Found {len(nodes)} node(s), recording {len(all_topics)} topic(s)[/green]",
         err=True,
     )
-    console.print(f"[dim]Output: {output}[/dim]", err=True)
+    console.print(f"[dim]Output: {output} (format: {fmt})[/dim]", err=True)
     console.print("[dim]Press Ctrl+C to stop[/dim]\n", err=True)
 
     running = True
@@ -162,6 +165,12 @@ def info():
         table.add_row("CycloneDDS", "[red]not installed[/red]")
 
     try:
+        import numpy as np
+        table.add_row("NumPy", np.__version__)
+    except ImportError:
+        table.add_row("NumPy", "[red]not installed[/red]")
+
+    try:
         import boto3
         table.add_row("boto3", "installed")
     except ImportError:
@@ -176,7 +185,7 @@ def info():
     console.print(table)
 
 
-def _make_sink(output: str, s3_region: str | None, buffer_size: int):
+def _make_sink(output: str, fmt: str, s3_region: str | None, buffer_size: int, flush_interval: float):
     if output.startswith("s3://"):
         from ros_tap.sinks.s3 import S3Sink
         parts = output[5:].split("/", 1)
@@ -187,8 +196,12 @@ def _make_sink(output: str, s3_region: str | None, buffer_size: int):
         from ros_tap.sinks.stdout import StdoutSink
         return StdoutSink()
     else:
-        from ros_tap.sinks.local import LocalSink
-        return LocalSink(output_dir=output)
+        if fmt == "npz":
+            from ros_tap.sinks.npz import NpzSink
+            return NpzSink(output_dir=output, flush_interval=flush_interval)
+        else:
+            from ros_tap.sinks.local import LocalSink
+            return LocalSink(output_dir=output)
 
 
 if __name__ == "__main__":
